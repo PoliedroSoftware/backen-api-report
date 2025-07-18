@@ -1,34 +1,34 @@
 ﻿using Microsoft.Extensions.Configuration;
 using MySqlConnector;
+using Poliedro.Billing.Domain.Common.Pagination;
 using Poliedro.Billing.Domain.Common.Results;
 using Poliedro.Billing.Domain.Common.Results.Errors;
-using Poliedro.Report.Domain.InvoiceReport.Ports;
-using Poliedro.Report.Domain.InvoiceReport.Entities;
-using Poliedro.Billing.Domain.Common.Pagination;
 using Poliedro.Report.Application.Ports.Redis;
+using Poliedro.Report.Domain.InvoiceReport.Entities;
+using Poliedro.Report.Domain.InvoiceReport.Ports;
 
-namespace Poliedro.Report.Infraestructure.Persistence.Mysql.InvoiceReport.Impl
+namespace Poliedro.Report.Infraestructure.Persistence.Mysql.InvoiceReport.Impl;
+
+public class InvoiceReportDomainService(IConfiguration config, IRedisService redisService) : IInvoiceReportDomainService
 {
-    public class InvoiceReportDomainService(IConfiguration config, IRedisService redisService) : IInvoiceReportDomainService
+    private readonly string _connectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION") ?? config["ConnectionStrings:MysqlConnection"];
+
+    public async Task<Result<IEnumerable<InvoiceReportEntity>, Error>> GetAllAsync(CancellationToken cancellationToken, PaginationParams paginationParams)
     {
-        private readonly string _connectionString = config["ConnectionStrings:MysqlConnection"];
+        List<InvoiceReportEntity> invoiceReports = new();
 
-        public async Task<Result<IEnumerable<InvoiceReportEntity>, Error>> GetAllAsync(CancellationToken cancellationToken, PaginationParams paginationParams)
+            string cacheKey = $"invoiceReport_{paginationParams.PageNumber}_{paginationParams.PageSize}";
+            var cachedData = await redisService.GetCacheAsync<IEnumerable<InvoiceReportEntity>>(cacheKey);
+            if (cachedData is not null) return Result<IEnumerable<InvoiceReportEntity>, Error>.Success(cachedData); 
+
+
+
+        using MySqlConnection connection = new(_connectionString);
+        try
         {
-            List<InvoiceReportEntity> invoiceReports = new();
+            await connection.OpenAsync(cancellationToken);
 
-                string cacheKey = $"invoiceReport_{paginationParams.PageNumber}_{paginationParams.PageSize}";
-                var cachedData = await redisService.GetCacheAsync<IEnumerable<InvoiceReportEntity>>(cacheKey);
-                if (cachedData is not null) return Result<IEnumerable<InvoiceReportEntity>, Error>.Success(cachedData); 
-
-
-
-            using MySqlConnection connection = new(_connectionString);
-            try
-            {
-                await connection.OpenAsync(cancellationToken);
-
-                string query = @"
+            string query = @"
                     SELECT 
                         v_invoice_detail.id,
                         v_invoice_detail.transaccion,
@@ -49,41 +49,40 @@ namespace Poliedro.Report.Infraestructure.Persistence.Mysql.InvoiceReport.Impl
                     JOIN 
                         v_invoice ON v_invoice_detail.transaccion = v_invoice.id
                     LIMIT @Pagesize OFFSET @Offset";
-                int offset = (paginationParams.PageNumber - 1) * paginationParams.PageSize;
-                using MySqlCommand command = new(query, connection);
-                command.Parameters.AddWithValue("@PageSize", paginationParams.PageSize);
-                command.Parameters.AddWithValue("@Offset", offset);
-                using (var reader = await command.ExecuteReaderAsync(cancellationToken))
-                {
-                    while (await reader.ReadAsync(cancellationToken))
-                    {
-                        invoiceReports.Add(new InvoiceReportEntity
-                        {
-                            Id = reader.GetInt32(0),
-                            Transaccion = reader.GetInt32(1),
-                            Code = reader.GetInt32(2),
-                            TypeItemIdentificationId = reader.GetInt32(3),
-                            Description = reader.GetString(4),
-                            UnitMeasureId = reader.GetInt32(5),
-                            BaseQuantity = reader.GetDecimal(6),
-                            InvoicedQuantity = reader.GetDecimal(7),
-                            PriceAmount = reader.GetDecimal(8),
-                            LineExtensionAmount = reader.GetDecimal(9),
-                            Percent = reader.GetDouble(10),
-                            TaxAmount = reader.GetDecimal(11),
-                            UnitPrice = reader.GetDecimal(12),
-                            ContactName = reader.GetString(13)
-                        });
-                    }
-                }
-
-                return Result<IEnumerable<InvoiceReportEntity>, Error>.Success(invoiceReports);
-            }
-            catch (Exception ex)
+            int offset = (paginationParams.PageNumber - 1) * paginationParams.PageSize;
+            using MySqlCommand command = new(query, connection);
+            command.Parameters.AddWithValue("@PageSize", paginationParams.PageSize);
+            command.Parameters.AddWithValue("@Offset", offset);
+            using (var reader = await command.ExecuteReaderAsync(cancellationToken))
             {
-                Console.WriteLine($"Database error: {ex.Message}");
-                return Result<IEnumerable<InvoiceReportEntity>, Error>.Failure(null);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    invoiceReports.Add(new InvoiceReportEntity
+                    {
+                        Id = reader.GetInt32(0),
+                        Transaccion = reader.GetInt32(1),
+                        Code = reader.GetInt32(2),
+                        TypeItemIdentificationId = reader.GetInt32(3),
+                        Description = reader.GetString(4),
+                        UnitMeasureId = reader.GetInt32(5),
+                        BaseQuantity = reader.GetDecimal(6),
+                        InvoicedQuantity = reader.GetDecimal(7),
+                        PriceAmount = reader.GetDecimal(8),
+                        LineExtensionAmount = reader.GetDecimal(9),
+                        Percent = reader.GetDouble(10),
+                        TaxAmount = reader.GetDecimal(11),
+                        UnitPrice = reader.GetDecimal(12),
+                        ContactName = reader.GetString(13)
+                    });
+                }
             }
+
+            return Result<IEnumerable<InvoiceReportEntity>, Error>.Success(invoiceReports);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Database error: {ex.Message}");
+            return Result<IEnumerable<InvoiceReportEntity>, Error>.Failure(null);
         }
     }
 }
