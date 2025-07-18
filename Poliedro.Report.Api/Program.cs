@@ -3,6 +3,9 @@ using Poliedro.Billing.Api.Common.Configurations;
 using Poliedro.Report.Application;
 using Poliedro.Report.Application.Ports.Redis;
 using Poliedro.Report.Infraestructure.Persistence.Mysql;
+using HealthChecks.UI.Client;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
@@ -15,6 +18,12 @@ builder.Services
     .AddWebApi()
     .AddApplication()
     .AddPersistence(builder.Configuration);
+var connectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION") ?? builder.Configuration["ConnectionStrings:MysqlConnection"];
+
+builder.Services.AddHealthChecks()
+    .AddMySql(connectionString, name: "sql", tags: ["ready"])
+    .AddRedis(builder.Configuration["Redis:ConnectionString"], name: "redis", tags: ["ready"]);
+    
 builder.Services.Configure<RedisConfig>(builder.Configuration.GetSection("Redis"));
 builder.Services.AddControllers(options =>
 {
@@ -37,6 +46,10 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+app.MapHealthChecks("/health", new HealthCheckOptions()
+{
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
+});
 app.UseCors("PoliedroReport");
 if (app.Environment.IsDevelopment())
 {
