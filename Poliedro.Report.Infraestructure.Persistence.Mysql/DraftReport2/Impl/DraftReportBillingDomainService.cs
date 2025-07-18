@@ -12,7 +12,7 @@ namespace Poliedro.Report.Infraestructure.Persistence.Mysql.DraftReport.Impl;
 
 public class DraftReportDomainService(IConfiguration config, IRedisService redisService) : IDraftReportDomainDraftReport
 {
-    private readonly string _connectionString = config["ConnectionStrings:MysqlConnection"];
+    private readonly string _connectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION") ?? config["ConnectionStrings:MysqlConnection"];
 
     public async Task<Result<IEnumerable<DraftReportEntity>, Error>> GetAllAsync(CancellationToken cancellationToken, PaginationParams paginationParams)
     {

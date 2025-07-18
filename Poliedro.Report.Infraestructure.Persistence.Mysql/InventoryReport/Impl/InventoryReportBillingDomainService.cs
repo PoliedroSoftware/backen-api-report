@@ -12,9 +12,9 @@ namespace Poliedro.Report.Infraestructure.Persistence.Mysql.InventoryReport.Impl
 
 public class InventoryReportDomainService(IConfiguration config, IRedisService redisService) : IInventoryReportDomainInventoryReport
 {
-    private readonly string _connectionString = config["ConnectionStrings:MysqlConnection"];
+    private readonly string _connectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION") ?? config["ConnectionStrings:MysqlConnection"];
 
-public async Task<Result<IEnumerable<InventoryReportEntity>, Error>> GetAllAsync(CancellationToken cancellationToken, PaginationParams paginationParams)
+    public async Task<Result<IEnumerable<InventoryReportEntity>, Error>> GetAllAsync(CancellationToken cancellationToken, PaginationParams paginationParams)
 {
     List<InventoryReportEntity> inventoryReports = new();
     

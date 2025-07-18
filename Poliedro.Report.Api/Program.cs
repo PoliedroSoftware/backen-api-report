@@ -1,11 +1,10 @@
-using Poliedro.Report.Api;
+using HealthChecks.UI.Client;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Poliedro.Billing.Api.Common.Configurations;
+using Poliedro.Report.Api;
 using Poliedro.Report.Application;
 using Poliedro.Report.Application.Ports.Redis;
 using Poliedro.Report.Infraestructure.Persistence.Mysql;
-using HealthChecks.UI.Client;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;

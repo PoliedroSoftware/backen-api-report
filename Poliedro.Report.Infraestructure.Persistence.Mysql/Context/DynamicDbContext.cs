@@ -1,5 +1,4 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using Poliedro.Billing.Domain.Billing;
 
 namespace Poliedro.Report.Infraestructure.Persistence.Mysql.Context;
 
