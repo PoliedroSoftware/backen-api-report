@@ -5,23 +5,17 @@ using Poliedro.Billing.Domain.Common.Results;
 using Poliedro.Billing.Domain.Common.Results.Errors;
 using Poliedro.Billing.Domain.DraftReport.DomainDraftReport;
 using Poliedro.Billing.Domain.DraftReport.Entities;
-using Poliedro.Report.Application.Ports.Redis;
 
 
 namespace Poliedro.Report.Infraestructure.Persistence.Mysql.DraftReport.Impl;
 
-public class DraftReportDomainService(IConfiguration config, IRedisService redisService) : IDraftReportDomainDraftReport
+public class DraftReportDomainService(IConfiguration config) : IDraftReportDomainDraftReport
 {
     private readonly string _connectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION") ?? config["ConnectionStrings:MysqlConnection"];
 
     public async Task<Result<IEnumerable<DraftReportEntity>, Error>> GetAllAsync(CancellationToken cancellationToken, PaginationParams paginationParams)
     {
-        List<DraftReportEntity> draftReports = new();
-
-        string cacheKey = $"draftReport_{paginationParams.PageNumber}_{paginationParams.PageSize}";
-        var cachedData = await redisService.GetCacheAsync<IEnumerable<DraftReportEntity>>(cacheKey);
-        if (cachedData is not null) return Result<IEnumerable<DraftReportEntity>, Error>.Success(cachedData);
-
+        List<DraftReportEntity> draftReports = [];
         using MySqlConnection connection = new(_connectionString);
         try
         {
@@ -55,8 +49,6 @@ public class DraftReportDomainService(IConfiguration config, IRedisService redis
                     draftReports.Add(report);
                 }
             }
-
-            await redisService.SetCacheAsync(cacheKey, draftReports, TimeSpan.FromMinutes(1440));
             return Result<IEnumerable<DraftReportEntity>, Error>.Success(draftReports);
         }
         catch (Exception ex)
