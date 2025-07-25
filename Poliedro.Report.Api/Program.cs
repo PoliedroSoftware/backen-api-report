@@ -5,7 +5,7 @@ using Poliedro.Report.Api;
 using Poliedro.Report.Application;
 using Poliedro.Report.Application.Ports.Redis;
 using Poliedro.Report.Infraestructure.Persistence.Mysql;
-using Poliedro.Report.Infraestructure.Persistence.Mysql.Redis; // ¡Nuevo using!
+using Poliedro.Report.Infraestructure.Persistence.Mysql.Redis; 
 
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
@@ -19,8 +19,7 @@ builder.Services
     .AddApplication()
     .AddPersistence(builder.Configuration);
 
-// ¡Añade esta línea para registrar RedisCacheService como la implementación de IRedisService!
-// Usamos AddSingleton porque ConnectionMultiplexer está diseñado para ser una instancia única y compartida.
+
 builder.Services.AddSingleton<IRedisService, RedisCacheService>();
 
 var connectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION") ?? builder.Configuration["ConnectionStrings:MysqlConnection"];
