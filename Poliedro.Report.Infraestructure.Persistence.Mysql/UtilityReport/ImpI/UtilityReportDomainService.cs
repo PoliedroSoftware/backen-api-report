@@ -3,13 +3,12 @@ using MySqlConnector;
 using Poliedro.Billing.Domain.Common.Pagination;
 using Poliedro.Billing.Domain.Common.Results;
 using Poliedro.Billing.Domain.Common.Results.Errors;
-using Poliedro.Report.Application.Ports.Redis;
 using Poliedro.Report.Domain.UtilityReport.Entity;
 using Poliedro.Report.Domain.UtilityReport.Ports;
 
 namespace Poliedro.Report.Infraestructure.Persistence.Mysql.UtilityReport.ImpI;
 
-public class UtilityReportDomainService(IConfiguration config, IRedisService redisService) : IUtilityReportDomain
+public class UtilityReportDomainService(IConfiguration config) : IUtilityReportDomain
 {
     private readonly string _connectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION") ?? config["ConnectionStrings:MysqlConnection"];
 
@@ -17,22 +16,18 @@ public class UtilityReportDomainService(IConfiguration config, IRedisService red
     {
         UtilityReportEntity utilityReports = new();
 
-        string cacheKey = $"utilityReport_{paginationParams.PageNumber}_{paginationParams.PageSize}";
-        var cachedData = await redisService.GetCacheAsync<UtilityReportEntity>(cacheKey);
-        if (cachedData is not null) return Result<UtilityReportEntity, Error>.Success(cachedData);
-
         using MySqlConnection connection = new(_connectionString);
         try
         {
             await connection.OpenAsync(cancellationToken);
-            int offset = (paginationParams.PageNumber -1) * paginationParams.PageSize;
+            int offset = (paginationParams.PageNumber - 1) * paginationParams.PageSize;
 
             string queryYear = "SELECT * FROM v_utility_for_year LIMIT @PageSize OFFSET @Offset";
             using (MySqlCommand cmd = new(queryYear, connection))
             {
                 cmd.Parameters.AddWithValue("@PageSize", paginationParams.PageSize);
                 cmd.Parameters.AddWithValue("@Offset", offset);
-            
+
                 using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
                 {
                     while (await reader.ReadAsync(cancellationToken))
@@ -51,7 +46,7 @@ public class UtilityReportDomainService(IConfiguration config, IRedisService red
             {
                 cmd.Parameters.AddWithValue("@PageSize", paginationParams.PageSize);
                 cmd.Parameters.AddWithValue("@Offset", offset);
-            
+
                 using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
                 {
                     while (await reader.ReadAsync(cancellationToken))
