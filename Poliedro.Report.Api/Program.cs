@@ -5,6 +5,8 @@ using Poliedro.Report.Api;
 using Poliedro.Report.Application;
 using Poliedro.Report.Application.Ports.Redis;
 using Poliedro.Report.Infraestructure.Persistence.Mysql;
+using Poliedro.Report.Infraestructure.Persistence.Mysql.Redis;
+using StackExchange.Redis; 
 
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
@@ -13,17 +15,34 @@ var config = builder.Configuration;
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 
+
 builder.Services
     .AddWebApi()
     .AddApplication()
     .AddPersistence(builder.Configuration);
-var connectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION") ?? builder.Configuration["ConnectionStrings:MysqlConnection"];
+
+
+builder.Services.AddSingleton<IRedisService, RedisCacheService>();
+
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    var configuration = builder.Configuration.GetSection("Redis")["ConnectionString"];
+    return ConnectionMultiplexer.Connect(configuration);
+});
+
+
+var connectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION")
+                       ?? builder.Configuration["ConnectionStrings:MysqlConnection"];
 
 builder.Services.AddHealthChecks()
     .AddMySql(connectionString, name: "sql", tags: ["ready"])
     .AddRedis(builder.Configuration["Redis:ConnectionString"], name: "redis", tags: ["ready"]);
-    
+
+
 builder.Services.Configure<RedisConfig>(builder.Configuration.GetSection("Redis"));
+
+
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add<GlobalExceptionConfiguration>();
@@ -32,6 +51,8 @@ builder.Services.AddControllers(options =>
 builder.Services.AddRouting(routing => routing.LowercaseUrls = true);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("PoliedroReport", policy =>
@@ -45,11 +66,17 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+
 app.MapHealthChecks("/health", new HealthCheckOptions()
 {
     ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
 });
+
+
 app.UseCors("PoliedroReport");
+
+
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();

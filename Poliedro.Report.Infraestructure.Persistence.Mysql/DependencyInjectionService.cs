@@ -9,7 +9,6 @@ using Poliedro.Report.Domain.PaymentMethodReport.Ports;
 using Poliedro.Report.Domain.InvoiceReport.Ports;
 using Poliedro.Report.Domain.UtilityReport.Ports;
 using Poliedro.Report.Domain.SalesReport.Ports;
-using Poliedro.Report.Application.Ports.Redis;
 using Poliedro.Report.Infraestructure.Persistence.Mysql.Adapter;
 using Poliedro.Report.Infraestructure.Persistence.Mysql.Context;
 using Poliedro.Report.Infraestructure.Persistence.Mysql.InventoryReport.Impl;
@@ -18,7 +17,6 @@ using Poliedro.Report.Infraestructure.Persistence.Mysql.PaymentMethodReport.Impl
 using Poliedro.Report.Infraestructure.Persistence.Mysql.InvoiceReport.Impl;
 using Poliedro.Report.Infraestructure.Persistence.Mysql.UtilityReport.ImpI;
 using Poliedro.Report.Infraestructure.Persistence.Mysql.SalesReport.ImpI;
-using Poliedro.Report.Infraestructure.Persistence.Mysql.Redis;
 using Poliedro.Report.Infraestructure.Persistence.Mysql.DraftReport.Impl;
 
 namespace Poliedro.Report.Infraestructure.Persistence.Mysql;
@@ -31,7 +29,7 @@ public static class DependencyInjectionService
         services.AddDbContext<DataBaseContext>(
             options => options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)
         ));
-      
+
         services.AddTransient<IMessageProvider, MessageProvider>();
         services.AddTransient<ISuppliersReportDomainSuppliersReport, SuppliersReportDomainService>();
         services.AddTransient<IInventoryReportDomainInventoryReport, InventoryReportDomainService>();
@@ -41,8 +39,6 @@ public static class DependencyInjectionService
         services.AddTransient<ISalesReportDomain, SalesReportDomainService>();
         services.AddTransient<IDraftReportDomainDraftReport, DraftReportDomainService>();
 
-
-        services.AddTransient<IRedisService, RedisCacheService>();
         return services;
     }
 }

@@ -5,11 +5,10 @@ using Poliedro.Billing.Domain.Common.Results;
 using Poliedro.Billing.Domain.Common.Results.Errors;
 using Poliedro.Billing.Domain.SuppliersReport.DomainSuppliersReport;
 using Poliedro.Billing.Domain.SuppliersReport.Entities;
-using Poliedro.Report.Application.Ports.Redis;
 
 namespace Poliedro.Billing.Infraestructure.Persistence.Mysql.SuppliersReport.DomainService.Impl;
 
-public class SuppliersReportDomainService(IConfiguration config, IRedisService redisService) : ISuppliersReportDomainSuppliersReport
+public class SuppliersReportDomainService(IConfiguration config) : ISuppliersReportDomainSuppliersReport
 {
     private readonly string _connectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION") ?? config["ConnectionStrings:MysqlConnection"];
 
@@ -17,22 +16,18 @@ public class SuppliersReportDomainService(IConfiguration config, IRedisService r
     {
         List<SuppliersReportEntity> suppliersReports = new();
 
-        string cacheKey = $"suppliersReport_{paginationParams.PageNumber}_{paginationParams.PageSize}";
-        var cachedData = await redisService.GetCacheAsync<IEnumerable<SuppliersReportEntity>>(cacheKey);
-        if (cachedData is not null) return Result<IEnumerable<SuppliersReportEntity>, Error>.Success(cachedData);
-
         using MySqlConnection connection = new(_connectionString);
         try
         {
             await connection.OpenAsync(cancellationToken);
 
-            int offset = (paginationParams.PageNumber -1) * paginationParams.PageSize;
+            int offset = (paginationParams.PageNumber - 1) * paginationParams.PageSize;
             string query = $"SELECT * FROM v_saldo_por_proveedor"; // LIMIT @PageSize OFFSET @Offset";
 
             using MySqlCommand command = new(query, connection);
             command.Parameters.AddWithValue("@PageSize", paginationParams.PageSize);
             command.Parameters.AddWithValue("@Offset", offset);
-            
+
             using MySqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
             while (await reader.ReadAsync(cancellationToken))

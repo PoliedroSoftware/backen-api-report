@@ -3,21 +3,31 @@ using MediatR;
 using Poliedro.Billing.Domain.Common.Results;
 using Poliedro.Billing.Domain.Common.Results.Errors;
 using Poliedro.Report.Application.InvoiceReport.Dtos;
+using Poliedro.Report.Application.Ports.Redis;
 using Poliedro.Report.Domain.InvoiceReport.Ports;
 
 namespace Poliedro.Report.Application.InvoiceReport.Queries.GetAllInvoiceReport
 {
     public class GetAllInvoiceReportQueryHandler
-        (
-            IInvoiceReportDomainService InvoiceReportDomainService,
-            IMapper mapper
-        ) : IRequestHandler<GetAllInvoiceReportQuery, Result<IEnumerable<InvoiceReportGroupDto>, Error>>
+    (
+        IInvoiceReportDomainService invoiceReportDomainService,
+        IMapper mapper,
+        IRedisService redisService
+    ) : IRequestHandler<GetAllInvoiceReportQuery, Result<IEnumerable<InvoiceReportGroupDto>, Error>>
     {
         public async Task<Result<IEnumerable<InvoiceReportGroupDto>, Error>> Handle(
             GetAllInvoiceReportQuery request,
             CancellationToken cancellationToken)
         {
-            var result = await InvoiceReportDomainService.GetAllAsync(cancellationToken, request.PaginationParams);
+            string cacheKey = $"invoiceReport_{request.PaginationParams.PageNumber}_{request.PaginationParams.PageSize}";
+
+            var cachedData = await redisService.GetCacheAsync<IEnumerable<InvoiceReportGroupDto>>(cacheKey);
+            if (cachedData is not null)
+            {
+                return Result<IEnumerable<InvoiceReportGroupDto>, Error>.Success(cachedData);
+            }
+
+            var result = await invoiceReportDomainService.GetAllAsync(cancellationToken, request.PaginationParams);
 
             if (!result.IsSuccess || result.Value == null)
                 return result.Error!;
@@ -29,7 +39,10 @@ namespace Poliedro.Report.Application.InvoiceReport.Queries.GetAllInvoiceReport
                         g.First().ContactName,
                         mapper.Map<List<InvoiceDetailReportDto>>(g.ToList())
                     )
-                );
+                ).ToList();
+
+            await redisService.SetCacheAsync(cacheKey, grouped, TimeSpan.FromMinutes(1440));
+
             return Result<IEnumerable<InvoiceReportGroupDto>, Error>.Success(grouped);
         }
     }
