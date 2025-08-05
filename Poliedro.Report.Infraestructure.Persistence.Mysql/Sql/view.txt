@@ -1,0 +1,466 @@
+﻿
+
+CREATE OR REPLACE ALGORITHM = UNDEFINED VIEW `v_draft` AS
+select
+    cast(`t`.`created_at` as date) AS `fecha`,
+    `p`.`sku` AS `codigo`,
+    `p`.`name` AS `producto`,
+    `ts`.`quantity` AS `cantidad`,
+    `ts`.`unit_price_inc_tax` AS `precio`,
+    (`ts`.`quantity` * `ts`.`unit_price_inc_tax`) AS `subtotal`,
+    `c`.`name` AS `cliente`,
+    `t`.`invoice_no` AS `referencia`
+from
+    (((`transactions` `t`
+join `transaction_sell_lines` `ts` on
+    ((`t`.`id` = `ts`.`transaction_id`)))
+join `contacts` `c` on
+    ((`t`.`contact_id` = `c`.`id`)))
+join `products` `p` on
+    ((`p`.`id` = `ts`.`product_id`)))
+where
+    (`t`.`status` = 'draft')
+order by
+    cast(`t`.`created_at` as date) desc;
+
+
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_inventario` AS
+select
+    `p`.`sku` AS `SKU`,
+    `p`.`name` AS `Name`,
+    `u`.`actual_name` AS `Presentation`,
+    coalesce(max(`pc`.`purchase_price_inc_tax`), 0) AS `Cost`,
+    coalesce(max(`v`.`sell_price_inc_tax`), coalesce(max(`pc`.`purchase_price_inc_tax`), 0)) AS `Sale`,
+    max(`vd`.`qty_available`) AS `Inventory`,
+    max(`v`.`profit_percent`) AS `Percentage`,
+    if((coalesce(max(`pc`.`purchase_price_inc_tax`), 0) = 0), 0,(max(`vd`.`qty_available`) * coalesce(max(`pc`.`purchase_price_inc_tax`), 0))) AS `Subtotal_Cost`,
+    if((coalesce(max(`pc`.`purchase_price_inc_tax`), 0) = 0), 0,(max(`vd`.`qty_available`) * coalesce(max(`v`.`sell_price_inc_tax`), coalesce(max(`pc`.`purchase_price_inc_tax`), 0)))) AS `Subtotal_Sale`
+from
+    ((((((`variation_location_details` `vd`
+left join `products` `p` on
+    ((`p`.`id` = `vd`.`product_id`)))
+left join `categories` `c` on
+    ((`c`.`id` = `p`.`category_id`)))
+left join `units` `u` on
+    ((`u`.`id` = `p`.`unit_id`)))
+left join `purchase_lines` `pc` on
+    ((`p`.`id` = `pc`.`product_id`)))
+left join `transaction_sell_lines` `pv` on
+    ((`pv`.`product_id` = `p`.`id`)))
+left join `variations` `v` on
+    ((`v`.`product_id` = `p`.`id`)))
+group by
+    `p`.`sku`,
+    `p`.`name`,
+    `u`.`actual_name`
+order by
+    `p`.`sku` desc;
+
+
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_invoice` AS
+select
+    `t`.`id` AS `id`,
+    coalesce(`c`.`contact_id`, 'N/A') AS `identication`,
+    coalesce(`c`.`name`, 'Consumidor Final') AS `contact_name`,
+    coalesce(`c`.`email`, 'poliedrosoftware@gmail.com') AS `email`,
+    coalesce(`c`.`mobile`, '3154286798') AS `mobile`,
+    coalesce(`c`.`city`, 'Ocaña') AS `city`,
+    coalesce(`c`.`state`, 'Norte de Santander') AS `state`,
+    coalesce(`c`.`country`, 'Colombia') AS `country`,
+    `t`.`invoice_no` AS `invoice`,
+    (case
+        when (`t`.`payment_status` in ('due', 'partial')) then 'credit'
+        else 'counted'
+    end) AS `payment_status`,
+    `t`.`transaction_date` AS `transaction_date`,
+    0 AS `allowanceTotal`,
+    coalesce((select sum(`tsl`.`unit_price`) from `transaction_sell_lines` `tsl` where (`tsl`.`transaction_id` = `t`.`id`)), 0.0) AS `invoiceBaseTotal`,
+    coalesce(`t`.`final_total`, 0.0) AS `invoiceTaxExclusiveTotal`,
+    coalesce(`t`.`final_total`, 0.0) AS `invoiceTaxInclusiveTotal`,
+    coalesce(`t`.`final_total`, 0.0) AS `totalToPay`,
+    coalesce((select sum(`tsl`.`item_tax`) from `transaction_sell_lines` `tsl` where (`tsl`.`transaction_id` = `t`.`id`)), 0.0) AS `invoiceTax`,
+    coalesce(`tax_info`.`total_tax_amount`, 0.0) AS `percent`,
+    coalesce(`u`.`username`, 'Vendedor') AS `created_by_name`
+from
+    (((`transactions` `t`
+left join `contacts` `c` on
+    ((`t`.`contact_id` = `c`.`id`)))
+left join `users` `u` on
+    ((`t`.`created_by` = `u`.`id`)))
+left join (
+    select
+        `tsl`.`transaction_id` AS `transaction_id`,
+        sum(`tr`.`amount`) AS `total_tax_amount`
+    from
+        (`transaction_sell_lines` `tsl`
+    left join `tax_rates` `tr` on
+        ((`tsl`.`tax_id` = `tr`.`id`)))
+    group by
+        `tsl`.`transaction_id`) `tax_info` on
+    ((`tax_info`.`transaction_id` = `t`.`id`)))
+where
+    (`t`.`type` = 'sell')
+order by
+    `t`.`created_at` desc;
+
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_invoice_detail` AS
+select
+    `tsl`.`id` AS `id`,
+    `tsl`.`transaction_id` AS `transaccion`,
+    `tsl`.`product_id` AS `code`,
+    `tsl`.`product_id` AS `type_item_identification_id`,
+    `p`.`name` AS `description`,
+    70 AS `unit_measure_id`,
+    `tsl`.`quantity` AS `base_quantity`,
+    `tsl`.`quantity` AS `invoiced_quantity`,
+    `tsl`.`unit_price_inc_tax` AS `price_amount`,
+    (`tsl`.`quantity` * `tsl`.`unit_price_inc_tax`) AS `line_extension_amount`,
+    coalesce((select `tr`.`amount` from `tax_rates` `tr` where (`tr`.`id` = `tsl`.`tax_id`) limit 1), 0.0) AS `percent`,
+    coalesce(`tsl`.`item_tax`, 0.0) AS `tax_amount`,
+    coalesce(`tsl`.`unit_price`, 0.0) AS `unit_price`
+from
+    ((`transaction_sell_lines` `tsl`
+left join `products` `p` on
+    ((`tsl`.`product_id` = `p`.`id`)))
+left join `variations` `v` on
+    ((`tsl`.`variation_id` = `v`.`id`)))
+order by
+    `tsl`.`transaction_id` desc;
+
+
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_sales_for_pay_method` AS
+select
+    `v`.`transaction_id` AS `transaction_id`,
+    cast(min(`v`.`created_at`) as date) AS `date`,
+    monthname(min(`v`.`created_at`)) AS `month`,
+    month(min(`v`.`created_at`)) AS `nmonth`,
+    year(min(`v`.`created_at`)) AS `year`,
+    `t`.`invoice_no` AS `bill`,
+    sum(distinct (`v`.`quantity` * `v`.`unit_price_inc_tax`)) AS `subtotal`,
+    (case
+        when (`tp`.`method` = 'other') then 'otros'
+        when (`tp`.`method` = 'cash') then 'efectivo'
+        when (`tp`.`method` = 'card') then 'tarjeta'
+        when (`tp`.`method` = 'bank_transfer') then 'transferencia'
+        else `tp`.`method`
+    end) AS `payment_method`,
+    (case
+        when (`tp`.`is_return` = 1) then -(`tp`.`amount`)
+        else `tp`.`amount`
+    end) AS `payment_amount`
+from
+    ((`transaction_sell_lines` `v`
+left join `transactions` `t` on
+    ((`t`.`id` = `v`.`transaction_id`)))
+left join `transaction_payments` `tp` on
+    ((`tp`.`transaction_id` = `v`.`transaction_id`)))
+where
+    (`tp`.`method` is not null)
+group by
+    `v`.`transaction_id`,
+    `tp`.`id`,
+    `tp`.`method`,
+    `tp`.`amount`,
+    `t`.`invoice_no`
+order by
+    `v`.`transaction_id`;
+
+
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_sales_for_pay_method_for_day` AS
+select
+    `v`.`date` AS `date`,
+    `v`.`payment_method` AS `payment_method`,
+    sum(`v`.`payment_amount`) AS `total_paid`,
+    sum(`v`.`subtotal`) AS `total_sales`,
+    count(distinct `v`.`bill`) AS `invoice_quantity`,
+    (
+    select
+        sum(`v2`.`subtotal`)
+    from
+        `v_sales_for_pay_method` `v2`
+    where
+        (`v2`.`date` = `v`.`date`)) AS `total_sales_day`
+from
+    `v_sales_for_pay_method` `v`
+group by
+    `v`.`date`,
+    `v`.`payment_method`
+order by
+    `v`.`date` desc;
+
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_sales_for_pay_method_for_month` AS
+select
+    `v_sales_for_pay_method`.`year` AS `year`,
+    `v_sales_for_pay_method`.`nmonth` AS `nmonth`,
+    `v_sales_for_pay_method`.`month` AS `month`,
+    `v_sales_for_pay_method`.`payment_method` AS `payment_method`,
+    sum(`v_sales_for_pay_method`.`payment_amount`) AS `total_paid`,
+    sum(`v_sales_for_pay_method`.`subtotal`) AS `total_sales`,
+    count(distinct `v_sales_for_pay_method`.`bill`) AS `invoice_quantity`
+from
+    `v_sales_for_pay_method`
+group by
+    `v_sales_for_pay_method`.`year`,
+    `v_sales_for_pay_method`.`nmonth`,
+    `v_sales_for_pay_method`.`month`,
+    `v_sales_for_pay_method`.`payment_method`
+order by
+    `v_sales_for_pay_method`.`year`,
+    `v_sales_for_pay_method`.`nmonth` desc;
+
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_sales_for_pay_method_for_year` AS
+select
+    `v_sales_for_pay_method`.`year` AS `year`,
+    `v_sales_for_pay_method`.`payment_method` AS `payment_method`,
+    sum(`v_sales_for_pay_method`.`payment_amount`) AS `total_paid`,
+    sum(`v_sales_for_pay_method`.`subtotal`) AS `total_sales`,
+    count(distinct `v_sales_for_pay_method`.`bill`) AS `invoice_quantity`
+from
+    `v_sales_for_pay_method`
+group by
+    `v_sales_for_pay_method`.`year`,
+    `v_sales_for_pay_method`.`payment_method`
+order by
+    `v_sales_for_pay_method`.`year` desc;
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_sales_for_pay_method` AS
+select
+    `v`.`transaction_id` AS `transaction_id`,
+    cast(min(`v`.`created_at`) as date) AS `date`,
+    monthname(min(`v`.`created_at`)) AS `month`,
+    month(min(`v`.`created_at`)) AS `nmonth`,
+    year(min(`v`.`created_at`)) AS `year`,
+    `t`.`invoice_no` AS `bill`,
+    sum(distinct (`v`.`quantity` * `v`.`unit_price_inc_tax`)) AS `subtotal`,
+    (case
+        when (`tp`.`method` = 'other') then 'otros'
+        when (`tp`.`method` = 'cash') then 'efectivo'
+        when (`tp`.`method` = 'card') then 'tarjeta'
+        when (`tp`.`method` = 'bank_transfer') then 'transferencia'
+        else `tp`.`method`
+    end) AS `payment_method`,
+    (case
+        when (`tp`.`is_return` = 1) then -(`tp`.`amount`)
+        else `tp`.`amount`
+    end) AS `payment_amount`
+from
+    ((`transaction_sell_lines` `v`
+left join `transactions` `t` on
+    ((`t`.`id` = `v`.`transaction_id`)))
+left join `transaction_payments` `tp` on
+    ((`tp`.`transaction_id` = `v`.`transaction_id`)))
+where
+    (`tp`.`method` is not null)
+group by
+    `v`.`transaction_id`,
+    `tp`.`id`,
+    `tp`.`method`,
+    `tp`.`amount`,
+    `t`.`invoice_no`
+order by
+    `v`.`transaction_id`;
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_sales_for_day` AS
+select
+    `v_utilidad_por_venta_por_producto`.`fecha` AS `date`,
+    month(`v_utilidad_por_venta_por_producto`.`fecha`) AS `number_month`,
+    monthname(`v_utilidad_por_venta_por_producto`.`fecha`) AS `month`,
+    year(`v_utilidad_por_venta_por_producto`.`fecha`) AS `year`,
+    sum((`v_utilidad_por_venta_por_producto`.`cantidad` * `v_utilidad_por_venta_por_producto`.`precio_venta`)) AS `sale`
+from
+    `v_utilidad_por_venta_por_producto`
+group by
+    `v_utilidad_por_venta_por_producto`.`fecha`
+order by
+    `v_utilidad_por_venta_por_producto`.`fecha` desc;
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_sale_for_month` AS
+select
+    `v_sales_for_day`.`number_month` AS `number_month`,
+    `v_sales_for_day`.`month` AS `month`,
+    `v_sales_for_day`.`year` AS `year`,
+    sum(`v_sales_for_day`.`sale`) AS `sale`
+from
+    `v_sales_for_day`
+group by
+    `v_sales_for_day`.`year`,
+    `v_sales_for_day`.`number_month`,
+    `v_sales_for_day`.`month`
+order by
+    `v_sales_for_day`.`year` desc,
+    `v_sales_for_day`.`number_month` desc;
+
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_sales_for_year` AS
+select
+    `v_sale_for_month`.`year` AS `year`,
+    sum(`v_sale_for_month`.`sale`) AS `sale`
+from
+    `v_sale_for_month`
+group by
+    `v_sale_for_month`.`year`
+order by
+    `v_sale_for_month`.`year` desc;
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_sales_for_pay_method_x_year` AS
+select
+    `v_sales_for_pay_method`.`year` AS `year`,
+    `v_sales_for_pay_method`.`payment_method` AS `payment_method`,
+    sum(`v_sales_for_pay_method`.`payment_amount`) AS `total_paid`,
+    sum(`v_sales_for_pay_method`.`subtotal`) AS `total_sales`,
+    count(distinct `v_sales_for_pay_method`.`bill`) AS `invoice_quantity`
+from
+    `v_sales_for_pay_method`
+group by
+    `v_sales_for_pay_method`.`year`,
+    `v_sales_for_pay_method`.`payment_method`
+order by
+    `v_sales_for_pay_method`.`year` desc;
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_saldo_facturas` AS
+select
+    `tr`.`transaction_date` AS `fecha`,
+    `p`.`supplier_business_name` AS `proveedor`,
+    `p`.`name` AS `asesor`,
+    `tr`.`ref_no` AS `factura`,
+    `tr`.`final_total` AS `saldo`
+from
+    (`transactions` `tr`
+left join `contacts` `p` on
+    ((`tr`.`contact_id` = `p`.`id`)))
+where
+    ((`tr`.`payment_status` = 'due')
+        and (`tr`.`type` = 'purchase'));
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_saldo_por_proveedor` AS
+select
+    `v`.`proveedor` AS `proveedor`,
+    sum(`v`.`saldo`) AS `saldo`
+from
+    `v_saldo_facturas` `v`
+group by
+    `v`.`proveedor`;
+
+-- eduar_retail.v_saldo_por_proveedor source
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_saldo_por_proveedor` AS
+select
+    `v`.`proveedor` AS `proveedor`,
+    sum(`v`.`saldo`) AS `saldo`
+from
+    `v_saldo_facturas` `v`
+group by
+    `v`.`proveedor`;
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_utility_for_sales_for_product` AS
+select
+    cast(`v`.`created_at` as date) AS `date`,
+    `v`.`product_id` AS `productid`,
+    `p`.`name` AS `product`,
+    `vc`.`quantity` AS `amount`,
+    `c`.`purchase_price_inc_tax` AS `cost`,
+    `v`.`unit_price_inc_tax` AS `sales_price`,
+    ((`v`.`unit_price_inc_tax` - `c`.`purchase_price_inc_tax`) * `vc`.`quantity`) AS `utility`
+from
+    (((`transaction_sell_lines_purchase_lines` `vc`
+join `transaction_sell_lines` `v` on
+    ((`v`.`id` = `vc`.`sell_line_id`)))
+join `purchase_lines` `c` on
+    ((`c`.`id` = `vc`.`purchase_line_id`)))
+join `products` `p` on
+    ((`p`.`id` = `v`.`product_id`)))
+order by
+    cast(`v`.`created_at` as date) desc;
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_utility_for_day` AS
+select
+    `v_utility_for_sales_for_product`.`date` AS `date`,
+    year(`v_utility_for_sales_for_product`.`date`) AS `year`,
+    monthname(`v_utility_for_sales_for_product`.`date`) AS `month`,
+    sum(`v_utility_for_sales_for_product`.`utility`) AS `utility`
+from
+    `v_utility_for_sales_for_product`
+group by
+    `v_utility_for_sales_for_product`.`date`,
+    year(`v_utility_for_sales_for_product`.`date`),
+    monthname(`v_utility_for_sales_for_product`.`date`)
+order by
+    `v_utility_for_sales_for_product`.`date` desc;
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_utility_for_month` AS
+select
+    `subquery`.`year` AS `year`,
+    `subquery`.`month` AS `month`,
+    sum(`subquery`.`utility`) AS `utility`
+from
+    (
+    select
+        `v_utility_for_day`.`year` AS `year`,
+        `v_utility_for_day`.`month` AS `month`,
+        `v_utility_for_day`.`utility` AS `utility`,
+        date_format(`v_utility_for_day`.`date`, '%Y-%m') AS `month_date`
+    from
+        `v_utility_for_day`) `subquery`
+group by
+    `subquery`.`year`,
+    `subquery`.`month`,
+    `subquery`.`month_date`
+order by
+    `subquery`.`year` desc,
+    `subquery`.`month_date` desc;
+
+
+CREATE OR REPLACE
+ALGORITHM = UNDEFINED VIEW `v_utility_for_year` AS
+select
+    `v_utility_for_month`.`year` AS `year`,
+    sum(`v_utility_for_month`.`utility`) AS `utility`
+from
+    `v_utility_for_month`
+group by
+    `v_utility_for_month`.`year`
+order by
+    `v_utility_for_month`.`year` desc;
+
+
