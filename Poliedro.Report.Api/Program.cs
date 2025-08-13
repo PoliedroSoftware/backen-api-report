@@ -6,12 +6,11 @@ using Poliedro.Report.Application;
 using Poliedro.Report.Application.Ports.Redis;
 using Poliedro.Report.Infraestructure.Persistence.Mysql;
 using Poliedro.Report.Infraestructure.Persistence.Mysql.Redis;
-using StackExchange.Redis; 
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
 
-// Configura el logging
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 
@@ -23,21 +22,18 @@ builder.Services
 
 
 builder.Services.AddSingleton<IRedisService, RedisCacheService>();
-
-
+var redisConnection = Environment.GetEnvironmentVariable("REDIS_CONNECTION") ?? builder.Configuration.GetSection("Redis")["ConnectionString"];
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 {
-    var configuration = Environment.GetEnvironmentVariable("REDIS_CONNECTION") ?? builder.Configuration.GetSection("Redis")["ConnectionString"];
-    return ConnectionMultiplexer.Connect(configuration);
+    return ConnectionMultiplexer.Connect(redisConnection);
 });
-
 
 var connectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION")
                        ?? builder.Configuration["ConnectionStrings:MysqlConnection"];
 
 builder.Services.AddHealthChecks()
     .AddMySql(connectionString, name: "sql", tags: ["ready"])
-    .AddRedis(builder.Configuration["Redis:ConnectionString"], name: "redis", tags: ["ready"]);
+    .AddRedis(redisConnection, name: "redis", tags: ["ready"]);
 
 
 builder.Services.Configure<RedisConfig>(builder.Configuration.GetSection("Redis"));
