@@ -27,7 +27,7 @@ builder.Services.AddSingleton<IRedisService, RedisCacheService>();
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 {
-    var configuration = builder.Configuration.GetSection("Redis")["ConnectionString"];
+    var configuration = Environment.GetEnvironmentVariable("REDIS_CONNECTION") ?? builder.Configuration.GetSection("Redis")["ConnectionString"];
     return ConnectionMultiplexer.Connect(configuration);
 });
 
