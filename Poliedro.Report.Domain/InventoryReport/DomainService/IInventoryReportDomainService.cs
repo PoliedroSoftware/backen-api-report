@@ -7,6 +7,6 @@ namespace Poliedro.Billing.Domain.InventoryReport.DomainInventoryReport
 {
     public interface  IInventoryReportDomainInventoryReport
     {
-        Task<Result<IEnumerable<InventoryReportEntity>, Error>> GetAllAsync(CancellationToken cancellationToken, PaginationParams paginationParams);
+        Task<Result<PaginationResponse<InventoryReportEntity>, Error>> GetAllAsync(CancellationToken cancellationToken, PaginationParams paginationParams);
     }
 }

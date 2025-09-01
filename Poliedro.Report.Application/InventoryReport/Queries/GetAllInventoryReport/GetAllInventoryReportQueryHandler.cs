@@ -1,6 +1,7 @@
 ﻿using AutoMapper;
 using MediatR;
 using Poliedro.Billing.Application.InventoryReport.Dtos;
+using Poliedro.Billing.Domain.Common.Pagination;
 using Poliedro.Billing.Domain.Common.Results;
 using Poliedro.Billing.Domain.Common.Results.Errors;
 using Poliedro.Billing.Domain.InventoryReport.DomainInventoryReport;
@@ -13,29 +14,36 @@ public class GetAllInventoryReportQueryHandler
     IInventoryReportDomainInventoryReport inventoryReportDomain,
     IMapper mapper,
     IRedisService redisService
-) : IRequestHandler<GetAllInventoryReportQuery, Result<IEnumerable<InventoryReportDto>, Error>>
+) : IRequestHandler<GetAllInventoryReportQuery, Result<PaginationResponse<InventoryReportDto>, Error>>
 {
 
-    public async Task<Result<IEnumerable<InventoryReportDto>, Error>>
+    public async Task<Result<PaginationResponse<InventoryReportDto>, Error>>
         Handle(GetAllInventoryReportQuery request, CancellationToken cancellationToken)
     {
         string cacheKey = $"inventoryReport_{request.paginationParams.PageNumber}_{request.paginationParams.PageSize}";
 
-        var cachedData = await redisService.GetCacheAsync<IEnumerable<InventoryReportDto>>(cacheKey);
+        var cachedData = await redisService.GetCacheAsync<PaginationResponse<InventoryReportDto>>(cacheKey);
         if (cachedData is not null)
         {
-            return Result<IEnumerable<InventoryReportDto>, Error>.Success(cachedData);
+            return Result<PaginationResponse<InventoryReportDto>, Error>.Success(cachedData);
         }
 
         var result = await inventoryReportDomain.GetAllAsync(cancellationToken, request.paginationParams);
 
-        if (!result.IsSuccess && result.Value != null)
+        if (!result.IsSuccess || result.Value == null)
             return result.Error!;
 
-        var dtoList = mapper.Map<List<InventoryReportDto>>(result.Value);
+        var dtoList = mapper.Map<List<InventoryReportDto>>(result.Value.Data);
 
-        await redisService.SetCacheAsync(cacheKey, dtoList, TimeSpan.FromMinutes(1440));
+        var paginationResponse = new PaginationResponse<InventoryReportDto>
+        {
+            Data = dtoList,
+            TotalRows = result.Value.TotalRows,
+            TotalPages = result.Value.TotalPages
+        };
 
-        return dtoList;
+        await redisService.SetCacheAsync(cacheKey, paginationResponse, TimeSpan.FromMinutes(1440));
+
+        return Result<PaginationResponse<InventoryReportDto>, Error>.Success(paginationResponse);
     }
 }
